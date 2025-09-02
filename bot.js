@@ -46,33 +46,6 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
-// New handler for the /add command
-bot.onText(/\/add/, async (msg) => {
-    const chatId = msg.chat.id;
-    if (msg.chat.type === 'private') {
-        bot.sendMessage(chatId, 'This command must be used in a channel.');
-        return;
-    }
-    
-    const botIsAdmin = await isBotAdmin(chatId);
-    if (botIsAdmin) {
-        db.update({ id: chatId }, { id: chatId, title: msg.chat.title }, { upsert: true }, (err, numReplaced, upsert) => {
-            if (err) console.error(err);
-            else {
-                if (upsert) {
-                    bot.sendMessage(chatId, 'Channel successfully added to the bot\'s list!');
-                    console.log(`Channel added manually: ${msg.chat.title} (${chatId})`);
-                } else {
-                    bot.sendMessage(chatId, 'This channel is already in the bot\'s list.');
-                    console.log(`Channel already exists: ${msg.chat.title} (${chatId})`);
-                }
-            }
-        });
-    } else {
-        bot.sendMessage(chatId, 'I need to be an administrator of this channel to add it.');
-    }
-});
-
 // Handler for the "Create New Post" button
 bot.onText(/Create New Post/, async (msg) => {
     const chatId = msg.chat.id;
@@ -166,29 +139,19 @@ bot.onText(/\/done/, (msg) => {
     });
 });
 
-// Handler for detecting when the bot is added to a new chat
-bot.on('new_chat_members', async (msg) => {
-    const newMember = msg.new_chat_members.find(member => member.id === bot.options.token.split(':')[0]);
 
-    if (newMember) {
-        const chatId = msg.chat.id;
-        const chatType = msg.chat.type;
+// New handler to automatically detect and add channels
+bot.on('channel_post', async (msg) => {
+    const chatId = msg.chat.id;
+    const botIsAdmin = await isBotAdmin(chatId);
 
-        if (chatType === 'channel') {
-            const botIsAdmin = await isBotAdmin(chatId);
-            if (botIsAdmin) {
-                db.update({ id: chatId }, { id: chatId, title: msg.chat.title }, { upsert: true }, (err, numReplaced, upsert) => {
-                    if (err) console.error(err);
-                    else {
-                        if (upsert) {
-                            console.log(`New channel added: ${msg.chat.title} (${chatId})`);
-                        } else {
-                            console.log(`Channel ${msg.chat.title} (${chatId}) already exists.`);
-                        }
-                    }
-                });
+    if (botIsAdmin) {
+        db.update({ id: chatId }, { id: chatId, title: msg.chat.title }, { upsert: true }, (err, numReplaced, upsert) => {
+            if (err) console.error(err);
+            else if (upsert) {
+                console.log(`New channel automatically added: ${msg.chat.title} (${chatId})`);
             }
-        }
+        });
     }
 });
 
