@@ -10,7 +10,7 @@ const db = new Client({
     ssl: {
         rejectUnauthorized: false
     }
-});
+    });
 
 db.connect().then(() => {
     console.log('Connected to PostgreSQL database');
@@ -18,9 +18,9 @@ db.connect().then(() => {
         CREATE TABLE IF NOT EXISTS channels (
             id TEXT PRIMARY KEY,
             title TEXT
-        );
-    `);
-}).catch(err => console.error('Database connection error', err));
+            );
+        `);
+    }).catch(err => console.error('Database connection error', err));
 
 // Object to store user conversation state and media
 const userState = {};
@@ -53,7 +53,7 @@ bot.onText(/\/start/, (msg) => {
             keyboard: [
                 [{ text: 'Create New Post' }],
                 [{ text: 'View My Channels' }]
-            ],
+                ],
             resize_keyboard: true,
             one_time_keyboard: false
         }
@@ -182,32 +182,47 @@ bot.onText(/\/done/, (msg) => {
 // Handler for all messages
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.type !== 'private' || !userState[chatId] || userState[chatId].step !== 'collecting_content') {
-        return;
-    }
+    if (msg.chat.type !== 'private') return;
 
-    const { content } = userState[chatId];
-    let newContent = {};
+    // If user is collecting content, store it
+    if (userState[chatId] && userState[chatId].step === 'collecting_content') {
+        const { content } = userState[chatId];
+        let newContent = {};
+        
+        if (msg.text && !msg.photo && !msg.video && !msg.animation && !msg.sticker) {
+            if (msg.text.toLowerCase() === '/done') return;
+            newContent = { type: 'text', value: msg.text };
+        } else if (msg.photo) {
+            const fileId = msg.photo[msg.photo.length - 1].file_id;
+            newContent = { type: 'photo', value: fileId, caption: msg.caption };
+        } else if (msg.video) {
+            const fileId = msg.video.file_id;
+            newContent = { type: 'video', value: fileId, caption: msg.caption };
+        } else if (msg.animation) {
+            const fileId = msg.animation.file_id;
+            newContent = { type: 'animation', value: fileId };
+        } else if (msg.sticker) {
+            const fileId = msg.sticker.file_id;
+            newContent = { type: 'sticker', value: fileId };
+        }
 
-    if (msg.text && !msg.photo && !msg.video && !msg.animation && !msg.sticker) {
-        newContent = { type: 'text', value: msg.text };
-    } else if (msg.photo) {
-        const fileId = msg.photo[msg.photo.length - 1].file_id;
-        newContent = { type: 'photo', value: fileId, caption: msg.caption };
-    } else if (msg.video) {
-        const fileId = msg.video.file_id;
-        newContent = { type: 'video', value: fileId, caption: msg.caption };
-    } else if (msg.animation) {
-        const fileId = msg.animation.file_id;
-        newContent = { type: 'animation', value: fileId };
-    } else if (msg.sticker) {
-        const fileId = msg.sticker.file_id;
-        newContent = { type: 'sticker', value: fileId };
-    }
-
-    if (Object.keys(newContent).length > 0) {
-        content.push(newContent);
-        bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
+        if (Object.keys(newContent).length > 0) {
+            content.push(newContent);
+            bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
+        }
+    } else {
+        // If user is not collecting content, show the menu again
+        userState[chatId] = { step: 'menu' };
+        bot.sendMessage(chatId, 'Silakan pilih menu.', {
+            reply_markup: {
+                keyboard: [
+                    [{ text: 'Create New Post' }],
+                    [{ text: 'View My Channels' }]
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: false
+            }
+        });
     }
 });
 
