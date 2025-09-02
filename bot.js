@@ -1,15 +1,29 @@
 const TelegramBot = require('node-telegram-bot-api');
-const Datastore = require('nedb');
+const { Client } = require('pg');
 
-// Replace with your bot's API token
-const token = '8326864561:AAHsOmwu0jKhKcSAdXubqTzALdOgKiBNWyo';
+// Bot token and DB connection from Render environment variables
+const token = process.env.BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
+
+const db = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
+
+db.connect().then(() => {
+    console.log('Connected to PostgreSQL database');
+    return db.query(`
+        CREATE TABLE IF NOT EXISTS channels (
+            id TEXT PRIMARY KEY,
+            title TEXT
+        );
+    `);
+}).catch(err => console.error('Database connection error', err));
 
 // Object to store user conversation state and media
 const userState = {};
-
-// Database to store channel IDs
-const db = new Datastore({ filename: 'channels.db', autoload: true });
 
 // Function to check if the bot is an admin in a channel
 async function isBotAdmin(channelId) {
@@ -31,7 +45,7 @@ bot.onText(/\/start/, (msg) => {
 
     userState[chatId] = { step: 'menu' };
     
-    // Welcome message you requested
+    // Custom welcome message
     const welcomeMessage = "What can this bot do\nWelcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
     
     bot.sendMessage(chatId, welcomeMessage, {
@@ -51,32 +65,30 @@ bot.onText(/Create New Post/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
 
-    db.find({}, (err, docs) => {
-        if (docs.length === 0) {
-            bot.sendMessage(chatId, 'You have not added this bot to any channels yet. Please add this bot as an admin to your channels first.');
-        } else {
-            userState[chatId] = { step: 'collecting_content', content: [] };
-            bot.sendMessage(chatId, 'Please send the content you want to post (text, photos, videos, stickers, or GIFs). Type /done when you are finished.');
-        }
-    });
+    const res = await db.query('SELECT * FROM channels');
+    if (res.rows.length === 0) {
+        bot.sendMessage(chatId, 'You have not added this bot to any channels yet. Please add this bot as an admin to your channels first.');
+    } else {
+        userState[chatId] = { step: 'collecting_content', content: [] };
+        bot.sendMessage(chatId, 'Please send the content you want to post (text, photos, videos, stickers, or GIFs). Type /done when you are finished.');
+    }
 });
 
 // Handler for the "View My Channels" button
-bot.onText(/View My Channels/, (msg) => {
+bot.onText(/View My Channels/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
 
-    db.find({}, (err, docs) => {
-        if (docs.length === 0) {
-            bot.sendMessage(chatId, 'You have not added this bot to any channels yet.');
-        } else {
-            let channelList = "Here are the IDs of the registered channels:\n\n";
-            docs.forEach(doc => {
-                channelList += `${doc.id}\n`;
-            });
-            bot.sendMessage(chatId, channelList);
-        }
-    });
+    const res = await db.query('SELECT * FROM channels');
+    if (res.rows.length === 0) {
+        bot.sendMessage(chatId, 'You have not added this bot to any channels yet.');
+    } else {
+        let channelList = "Here are the IDs of the registered channels:\n\n";
+        res.rows.forEach(row => {
+            channelList += `${row.title} (${row.id})\n`;
+        });
+        bot.sendMessage(chatId, channelList);
+    }
 });
 
 // Handler for the /done command
@@ -96,40 +108,40 @@ bot.onText(/\/done/, (msg) => {
 
     bot.sendMessage(chatId, 'Okay, I will start sending your post to all channels.');
 
-    db.find({}, async (err, docs) => {
+    db.query('SELECT * FROM channels', async (err, res) => {
         if (err) {
             console.error(err);
             bot.sendMessage(chatId, 'An error occurred while retrieving the channel list.');
             return;
         }
 
-        if (docs.length === 0) {
+        if (res.rows.length === 0) {
             bot.sendMessage(chatId, 'No channels are registered. Post canceled.');
             userState[chatId] = { step: 'menu' };
             return;
         }
 
-        for (const doc of docs) {
+        for (const row of res.rows) {
             try {
                 for (const item of content) {
                     if (item.type === 'text') {
-                        await bot.sendMessage(doc.id, item.value);
+                        await bot.sendMessage(row.id, item.value);
                     } else if (item.type === 'photo') {
-                        await bot.sendPhoto(doc.id, item.value, { caption: item.caption });
+                        await bot.sendPhoto(row.id, item.value, { caption: item.caption });
                     } else if (item.type === 'video') {
-                        await bot.sendVideo(doc.id, item.value, { caption: item.caption });
+                        await bot.sendVideo(row.id, item.value, { caption: item.caption });
                     } else if (item.type === 'animation') {
-                        await bot.sendAnimation(doc.id, item.value);
+                        await bot.sendAnimation(row.id, item.value);
                     } else if (item.type === 'sticker') {
-                        await bot.sendSticker(doc.id, item.value);
+                        await bot.sendSticker(row.id, item.value);
                     }
                 }
-                console.log(`Message successfully sent to channel ${doc.id}`);
+                console.log(`Message successfully sent to channel ${row.id}`);
             } catch (e) {
-                console.error(`Failed to send to channel ${doc.id}: ${e.message}`);
+                console.error(`Failed to send to channel ${row.id}: ${e.message}`);
                 if (e.message.includes('chat not found')) {
-                    console.log(`Removing channel ${doc.id} from the database.`);
-                    db.remove({ id: doc.id }, {}, (err, numRemoved) => {});
+                    console.log(`Removing channel ${row.id} from the database.`);
+                    await db.query('DELETE FROM channels WHERE id = $1', [row.id]);
                 }
             }
         }
@@ -139,22 +151,23 @@ bot.onText(/\/done/, (msg) => {
     });
 });
 
-
-// New handler to automatically detect and add channels
+// Handler to automatically detect and add channels
 bot.on('channel_post', async (msg) => {
     const chatId = msg.chat.id;
     const botIsAdmin = await isBotAdmin(chatId);
 
     if (botIsAdmin) {
-        db.update({ id: chatId }, { id: chatId, title: msg.chat.title }, { upsert: true }, (err, numReplaced, upsert) => {
-            if (err) console.error(err);
-            else if (upsert) {
+        try {
+            const res = await db.query('SELECT * FROM channels WHERE id = $1', [chatId]);
+            if (res.rows.length === 0) {
+                await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chatId, msg.chat.title]);
                 console.log(`New channel automatically added: ${msg.chat.title} (${chatId})`);
             }
-        });
+        } catch (e) {
+            console.error('Error adding channel:', e);
+        }
     }
 });
-
 
 // Handler for all messages
 bot.on('message', async (msg) => {
