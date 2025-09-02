@@ -35,17 +35,8 @@ async function isBotAdmin(channelId) {
     }
 }
 
-// Handler for the /start command
-bot.onText(/\/start/, (msg) => {
-    const chatId = msg.chat.id;
-    if (msg.chat.type !== 'private') {
-        bot.sendMessage(chatId, 'Please use this bot in a private chat.');
-        return;
-    }
-
-    userState[chatId] = { step: 'menu' };
-    
-    // Custom welcome message
+// Function to send the main menu with buttons
+function sendMainMenu(chatId) {
     const welcomeMessage = "What can this bot do\nWelcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
     
     bot.sendMessage(chatId, welcomeMessage, {
@@ -58,6 +49,18 @@ bot.onText(/\/start/, (msg) => {
             one_time_keyboard: false
         }
     });
+}
+
+// Handler for the /start command
+bot.onText(/\/start/, (msg) => {
+    const chatId = msg.chat.id;
+    if (msg.chat.type !== 'private') {
+        bot.sendMessage(chatId, 'Please use this bot in a private chat.');
+        return;
+    }
+
+    userState[chatId] = { step: 'menu' };
+    sendMainMenu(chatId);
 });
 
 // Handler for the /register command
@@ -179,12 +182,12 @@ bot.onText(/\/done/, (msg) => {
     });
 });
 
-// Handler for all messages
+// This handler will always send the menu if the user is not in a specific workflow
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
 
-    // If user is collecting content, store it
+    // Do not show the menu if the user is currently posting content
     if (userState[chatId] && userState[chatId].step === 'collecting_content') {
         const { content } = userState[chatId];
         let newContent = {};
@@ -211,18 +214,8 @@ bot.on('message', async (msg) => {
             bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
         }
     } else {
-        // If user is not collecting content, show the menu again
-        userState[chatId] = { step: 'menu' };
-        bot.sendMessage(chatId, 'Silakan pilih menu.', {
-            reply_markup: {
-                keyboard: [
-                    [{ text: 'Create New Post' }],
-                    [{ text: 'View My Channels' }]
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: false
-            }
-        });
+        // If user sends anything other than a command, show the menu again
+        sendMainMenu(chatId);
     }
 });
 
