@@ -10,7 +10,7 @@ const db = new Client({
     ssl: {
         rejectUnauthorized: false
     }
-    });
+});
 
 db.connect().then(() => {
     console.log('Connected to PostgreSQL database');
@@ -18,9 +18,9 @@ db.connect().then(() => {
         CREATE TABLE IF NOT EXISTS channels (
             id TEXT PRIMARY KEY,
             title TEXT
-            );
-        `);
-    }).catch(err => console.error('Database connection error', err));
+        );
+    `);
+}).catch(err => console.error('Database connection error', err));
 
 // Object to store user conversation state and media
 const userState = {};
@@ -53,7 +53,7 @@ bot.onText(/\/start/, (msg) => {
             keyboard: [
                 [{ text: 'Create New Post' }],
                 [{ text: 'View My Channels' }]
-                ],
+            ],
             resize_keyboard: true,
             one_time_keyboard: false
         }
