@@ -36,9 +36,7 @@ async function isBotAdmin(channelId) {
 }
 
 // Function to send the main menu with buttons
-function sendMainMenu(chatId) {
-    const welcomeMessage = "What can this bot do\nWelcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
-    
+function sendMainMenu(chatId, welcomeMessage) {
     bot.sendMessage(chatId, welcomeMessage, {
         reply_markup: {
             keyboard: [
@@ -60,11 +58,12 @@ bot.onText(/\/start/, (msg) => {
     }
 
     userState[chatId] = { step: 'menu' };
-    sendMainMenu(chatId);
+    const welcomeMessage = "Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
+    sendMainMenu(chatId, welcomeMessage);
 });
 
-// Handler for the /register command
-bot.onText(/\/register/, async (msg) => {
+// Handler for the /register and /addchannel commands
+bot.onText(/\/register|\/addchannel/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type === 'private') {
         bot.sendMessage(chatId, 'This command must be used inside a channel where I am an admin.');
@@ -78,7 +77,7 @@ bot.onText(/\/register/, async (msg) => {
             if (res.rows.length === 0) {
                 await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chatId, msg.chat.title]);
                 bot.sendMessage(chatId, 'Channel successfully registered! You can now use "View My Channels" in our private chat.');
-                console.log(`Channel registered via /register: ${msg.chat.title} (${chatId})`);
+                console.log(`Channel registered via /addchannel: ${msg.chat.title} (${chatId})`);
             } else {
                 bot.sendMessage(chatId, 'This channel is already registered.');
             }
@@ -185,8 +184,10 @@ bot.onText(/\/done/, (msg) => {
 // This handler will always send the menu if the user is not in a specific workflow
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.type !== 'private') return;
-
+    if (msg.chat.type !== 'private') {
+        bot.sendMessage(chatId, 'Bot saya hanya bisa merespons di chat pribadi. Silakan kirimkan /start di chat pribadi dengan saya.');
+        return;
+    }
     // Do not show the menu if the user is currently posting content
     if (userState[chatId] && userState[chatId].step === 'collecting_content') {
         const { content } = userState[chatId];
@@ -214,8 +215,12 @@ bot.on('message', async (msg) => {
             bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
         }
     } else {
-        // If user sends anything other than a command, show the menu again
-        sendMainMenu(chatId);
+      // If user is not collecting content, check for command and respond
+      const text = msg.text.toLowerCase();
+      if (!text.startsWith('/start') && !text.startsWith('/register') && !text.startsWith('/addchannel') && !text.includes('create new post') && !text.includes('view my channels')) {
+          bot.sendMessage(chatId, 'Silakan pilih menu.');
+          sendMainMenu(chatId, 'Silakan pilih menu.');
+      }
     }
 });
 
