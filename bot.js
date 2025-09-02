@@ -60,6 +60,34 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
+// Handler for the /register command
+bot.onText(/\/register/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (msg.chat.type === 'private') {
+        bot.sendMessage(chatId, 'This command must be used inside a channel where I am an admin.');
+        return;
+    }
+
+    const botIsAdmin = await isBotAdmin(chatId);
+    if (botIsAdmin) {
+        try {
+            const res = await db.query('SELECT * FROM channels WHERE id = $1', [chatId]);
+            if (res.rows.length === 0) {
+                await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chatId, msg.chat.title]);
+                bot.sendMessage(chatId, 'Channel successfully registered! You can now use "View My Channels" in our private chat.');
+                console.log(`Channel registered via /register: ${msg.chat.title} (${chatId})`);
+            } else {
+                bot.sendMessage(chatId, 'This channel is already registered.');
+            }
+        } catch (e) {
+            console.error('Error registering channel:', e);
+            bot.sendMessage(chatId, 'An error occurred while trying to register the channel.');
+        }
+    } else {
+        bot.sendMessage(chatId, 'I must be an administrator in this channel to register it.');
+    }
+});
+
 // Handler for the "Create New Post" button
 bot.onText(/Create New Post/, async (msg) => {
     const chatId = msg.chat.id;
@@ -149,24 +177,6 @@ bot.onText(/\/done/, (msg) => {
         bot.sendMessage(chatId, 'Your post has been successfully sent to all channels!');
         userState[chatId] = { step: 'menu' };
     });
-});
-
-// Handler to automatically detect and add channels
-bot.on('channel_post', async (msg) => {
-    const chatId = msg.chat.id;
-    const botIsAdmin = await isBotAdmin(chatId);
-
-    if (botIsAdmin) {
-        try {
-            const res = await db.query('SELECT * FROM channels WHERE id = $1', [chatId]);
-            if (res.rows.length === 0) {
-                await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chatId, msg.chat.title]);
-                console.log(`New channel automatically added: ${msg.chat.title} (${chatId})`);
-            }
-        } catch (e) {
-            console.error('Error adding channel:', e);
-        }
-    }
 });
 
 // Handler for all messages
