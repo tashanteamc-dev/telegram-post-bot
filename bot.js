@@ -181,13 +181,12 @@ bot.onText(/\/done/, (msg) => {
     });
 });
 
-// This handler will always send the menu if the user is not in a specific workflow
+// This handler is for messages in private chat
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.type !== 'private') {
-        bot.sendMessage(chatId, 'Bot saya hanya bisa merespons di chat pribadi. Silakan kirimkan /start di chat pribadi dengan saya.');
-        return;
-    }
+    // We only care about private messages for this logic
+    if (msg.chat.type !== 'private') return;
+
     // Do not show the menu if the user is currently posting content
     if (userState[chatId] && userState[chatId].step === 'collecting_content') {
         const { content } = userState[chatId];
@@ -215,12 +214,11 @@ bot.on('message', async (msg) => {
             bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
         }
     } else {
-      // If user is not collecting content, check for command and respond
-      const text = msg.text.toLowerCase();
-      if (!text.startsWith('/start') && !text.startsWith('/register') && !text.startsWith('/addchannel') && !text.includes('create new post') && !text.includes('view my channels')) {
-          bot.sendMessage(chatId, 'Silakan pilih menu.');
-          sendMainMenu(chatId, 'Silakan pilih menu.');
-      }
+        // Only respond if the user is not in a workflow and sends a non-command text message
+        const text = msg.text ? msg.text.toLowerCase() : '';
+        if (text && !text.startsWith('/')) {
+            bot.sendMessage(chatId, 'Silakan pilih dari menu atau gunakan perintah /start untuk menampilkan menu.');
+        }
     }
 });
 
