@@ -1,7 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { Client } = require('pg');
 
-// Bot token and DB connection from Render environment variables
 const token = process.env.BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
 
@@ -22,10 +21,8 @@ db.connect().then(() => {
     `);
 }).catch(err => console.error('Database connection error', err));
 
-// Object to store user conversation state and media
 const userState = {};
 
-// Function to check if the bot is an admin in a channel
 async function isBotAdmin(channelId) {
     try {
         const chatMember = await bot.getChatMember(channelId, bot.options.token.split(':')[0]);
@@ -35,7 +32,6 @@ async function isBotAdmin(channelId) {
     }
 }
 
-// Function to send the main menu with buttons
 function sendMainMenu(chatId, welcomeMessage) {
     bot.sendMessage(chatId, welcomeMessage, {
         reply_markup: {
@@ -49,7 +45,6 @@ function sendMainMenu(chatId, welcomeMessage) {
     });
 }
 
-// Handler for the /start command
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') {
@@ -59,10 +54,19 @@ bot.onText(/\/start/, (msg) => {
 
     userState[chatId] = { step: 'menu' };
     const welcomeMessage = "Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
-    sendMainMenu(chatId, welcomeMessage);
+
+    bot.sendMessage(chatId, welcomeMessage, {
+        reply_markup: {
+            keyboard: [
+                [{ text: 'Create New Post' }],
+                [{ text: 'View My Channels' }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        }
+    });
 });
 
-// Handler for the /register and /addchannel commands
 bot.onText(/\/register|\/addchannel/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type === 'private') {
@@ -90,7 +94,6 @@ bot.onText(/\/register|\/addchannel/, async (msg) => {
     }
 });
 
-// Handler for the "Create New Post" button
 bot.onText(/Create New Post/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
@@ -104,7 +107,6 @@ bot.onText(/Create New Post/, async (msg) => {
     }
 });
 
-// Handler for the "View My Channels" button
 bot.onText(/View My Channels/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
@@ -121,7 +123,6 @@ bot.onText(/View My Channels/, async (msg) => {
     }
 });
 
-// Handler for the /done command
 bot.onText(/\/done/, (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private' || !userState[chatId] || userState[chatId].step !== 'collecting_content') {
@@ -175,23 +176,20 @@ bot.onText(/\/done/, (msg) => {
                 }
             }
         }
-        
+
         bot.sendMessage(chatId, 'Your post has been successfully sent to all channels!');
         userState[chatId] = { step: 'menu' };
     });
 });
 
-// This handler is for messages in private chat
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    // We only care about private messages for this logic
     if (msg.chat.type !== 'private') return;
 
-    // Do not show the menu if the user is currently posting content
     if (userState[chatId] && userState[chatId].step === 'collecting_content') {
         const { content } = userState[chatId];
         let newContent = {};
-        
+
         if (msg.text && !msg.photo && !msg.video && !msg.animation && !msg.sticker) {
             if (msg.text.toLowerCase() === '/done') return;
             newContent = { type: 'text', value: msg.text };
@@ -214,7 +212,6 @@ bot.on('message', async (msg) => {
             bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
         }
     } else {
-        // Only respond if the user is not in a workflow and sends a non-command text message
         const text = msg.text ? msg.text.toLowerCase() : '';
         if (text && !text.startsWith('/')) {
             bot.sendMessage(chatId, 'Silakan pilih dari menu atau gunakan perintah /start untuk menampilkan menu.');
