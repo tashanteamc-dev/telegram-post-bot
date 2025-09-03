@@ -32,7 +32,6 @@ async function isBotAdmin(channelId) {
     }
 }
 
-<<<<<<< HEAD
 function sendMainMenu(chatId, welcomeMessage) {
     bot.sendMessage(chatId, welcomeMessage, {
         reply_markup: {
@@ -46,9 +45,6 @@ function sendMainMenu(chatId, welcomeMessage) {
     });
 }
 
-=======
-// Handler for the /start command
->>>>>>> 33954ab5ca4c7d9e825a53444a12a098172d25d6
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') {
@@ -58,11 +54,7 @@ bot.onText(/\/start/, (msg) => {
 
     userState[chatId] = { step: 'menu' };
     const welcomeMessage = "Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
-<<<<<<< HEAD
 
-=======
-    
->>>>>>> 33954ab5ca4c7d9e825a53444a12a098172d25d6
     bot.sendMessage(chatId, welcomeMessage, {
         reply_markup: {
             keyboard: [
