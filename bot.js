@@ -6,33 +6,62 @@ const bot = new TelegramBot(token, { polling: true });
 
 const db = new Client({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
+    ssl: { rejectUnauthorized: false }
+});
+
+db.connect()
+    .then(() => {
+        console.log('Connected to PostgreSQL database');
+        return db.query(`
+            CREATE TABLE IF NOT EXISTS channels (
+                id TEXT PRIMARY KEY,
+                title TEXT
+            );
+        `);
+    })
+    .catch(err => console.error('Database connection error:', err));
+
+const userState = {};
+let botId;
+
+// Get bot ID once
+bot.getMe().then(info => {
+    botId = info.id;
+    console.log(`Bot started as @${info.username} (ID: ${botId})`);
+});
+
+// === Auto-detect when added or removed as admin ===
+bot.on('my_chat_member', async (update) => {
+    const chat = update.chat;
+    const newStatus = update.new_chat_member.status;
+
+    // Only handle channels
+    if (chat.type !== 'channel') return;
+
+    try {
+        if (newStatus === 'administrator') {
+            // Add to DB if not exists
+            const res = await db.query('SELECT * FROM channels WHERE id = $1', [chat.id]);
+            if (res.rows.length === 0) {
+                await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chat.id, chat.title]);
+                console.log(`✅ Channel registered automatically: ${chat.title} (${chat.id})`);
+            }
+        } else if (newStatus === 'left' || newStatus === 'kicked' || newStatus === 'member') {
+            // Remove if bot is no longer admin
+            await db.query('DELETE FROM channels WHERE id = $1', [chat.id]);
+            console.log(`❌ Channel removed automatically: ${chat.title} (${chat.id})`);
+        }
+    } catch (e) {
+        console.error('Error updating channel list:', e);
     }
 });
 
-db.connect().then(() => {
-    console.log('Connected to PostgreSQL database');
-    return db.query(`
-        CREATE TABLE IF NOT EXISTS channels (
-            id TEXT PRIMARY KEY,
-            title TEXT
-        );
-    `);
-}).catch(err => console.error('Database connection error', err));
-
-const userState = {};
-
-async function isBotAdmin(channelId) {
-    try {
-        const chatMember = await bot.getChatMember(channelId, bot.options.token.split(':')[0]);
-        return chatMember.status === 'administrator';
-    } catch (e) {
-        return false;
-    }
-}
-
-function sendMainMenu(chatId, welcomeMessage) {
+// === Menu ===
+function sendMainMenu(chatId) {
+    const welcomeMessage = "Welcome to the Broadcast Bot!\n\n" +
+        "➤ Add me as an admin in your channels.\n" +
+        "➤ I will automatically detect them.\n" +
+        "➤ You can then create a post once and I will send it to all your registered channels.";
     bot.sendMessage(chatId, welcomeMessage, {
         reply_markup: {
             keyboard: [
@@ -46,84 +75,46 @@ function sendMainMenu(chatId, welcomeMessage) {
 }
 
 bot.onText(/\/start/, (msg) => {
-    const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') {
-        bot.sendMessage(chatId, 'Please use this bot in a private chat.');
+        bot.sendMessage(msg.chat.id, 'Please use this bot in a private chat.');
         return;
     }
-
-    userState[chatId] = { step: 'menu' };
-    const welcomeMessage = "Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM";
-
-    bot.sendMessage(chatId, welcomeMessage, {
-        reply_markup: {
-            keyboard: [
-                [{ text: 'Create New Post' }],
-                [{ text: 'View My Channels' }]
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: false
-        }
-    });
+    userState[msg.chat.id] = { step: 'menu' };
+    sendMainMenu(msg.chat.id);
 });
 
-bot.onText(/\/register|\/addchannel/, async (msg) => {
-    const chatId = msg.chat.id;
-    if (msg.chat.type === 'private') {
-        bot.sendMessage(chatId, 'This command must be used inside a channel where I am an admin.');
-        return;
-    }
-
-    const botIsAdmin = await isBotAdmin(chatId);
-    if (botIsAdmin) {
-        try {
-            const res = await db.query('SELECT * FROM channels WHERE id = $1', [chatId]);
-            if (res.rows.length === 0) {
-                await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chatId, msg.chat.title]);
-                bot.sendMessage(chatId, 'Channel successfully registered! You can now use "View My Channels" in our private chat.');
-                console.log(`Channel registered via /addchannel: ${msg.chat.title} (${chatId})`);
-            } else {
-                bot.sendMessage(chatId, 'This channel is already registered.');
-            }
-        } catch (e) {
-            console.error('Error registering channel:', e);
-            bot.sendMessage(chatId, 'An error occurred while trying to register the channel.');
-        }
-    } else {
-        bot.sendMessage(chatId, 'I must be an administrator in this channel to register it.');
-    }
-});
-
+// === Create Post ===
 bot.onText(/Create New Post/, async (msg) => {
-    const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
 
     const res = await db.query('SELECT * FROM channels');
     if (res.rows.length === 0) {
-        bot.sendMessage(chatId, 'You have not added this bot to any channels yet. Please add this bot as an admin to your channels first.');
-    } else {
-        userState[chatId] = { step: 'collecting_content', content: [] };
-        bot.sendMessage(chatId, 'Please send the content you want to post (text, photos, videos, stickers, or GIFs). Type /done when you are finished.');
+        bot.sendMessage(msg.chat.id, 'You have not added me to any channels yet. Please add me as an admin first.');
+        return;
     }
+
+    userState[msg.chat.id] = { step: 'collecting_content', content: [] };
+    bot.sendMessage(msg.chat.id, 'Please send the content you want to post (text, photos, videos, stickers, or GIFs). Type /done when finished.');
 });
 
+// === View Channels ===
 bot.onText(/View My Channels/, async (msg) => {
-    const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
 
     const res = await db.query('SELECT * FROM channels');
     if (res.rows.length === 0) {
-        bot.sendMessage(chatId, 'You have not added this bot to any channels yet.');
+        bot.sendMessage(msg.chat.id, 'No channels are registered yet.');
     } else {
-        let channelList = "Here are the IDs of the registered channels:\n\n";
+        let channelList = "📋 Registered Channels:\n\n";
         res.rows.forEach(row => {
-            channelList += `${row.title} (${row.id})\n`;
+            channelList += `- ${row.title} (${row.id})\n`;
         });
-        bot.sendMessage(chatId, channelList);
+        bot.sendMessage(msg.chat.id, channelList);
     }
 });
 
-bot.onText(/\/done/, (msg) => {
+// === Finish Post ===
+bot.onText(/\/done/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private' || !userState[chatId] || userState[chatId].step !== 'collecting_content') {
         bot.sendMessage(chatId, 'There is nothing to post. Please use "Create New Post" first.');
@@ -137,21 +128,10 @@ bot.onText(/\/done/, (msg) => {
         return;
     }
 
-    bot.sendMessage(chatId, 'Okay, I will start sending your post to all channels.');
+    bot.sendMessage(chatId, '✅ Sending your post to all channels...');
 
-    db.query('SELECT * FROM channels', async (err, res) => {
-        if (err) {
-            console.error(err);
-            bot.sendMessage(chatId, 'An error occurred while retrieving the channel list.');
-            return;
-        }
-
-        if (res.rows.length === 0) {
-            bot.sendMessage(chatId, 'No channels are registered. Post canceled.');
-            userState[chatId] = { step: 'menu' };
-            return;
-        }
-
+    try {
+        const res = await db.query('SELECT * FROM channels');
         for (const row of res.rows) {
             try {
                 for (const item of content) {
@@ -167,54 +147,48 @@ bot.onText(/\/done/, (msg) => {
                         await bot.sendSticker(row.id, item.value);
                     }
                 }
-                console.log(`Message successfully sent to channel ${row.id}`);
+                console.log(`Message sent to ${row.title} (${row.id})`);
             } catch (e) {
-                console.error(`Failed to send to channel ${row.id}: ${e.message}`);
+                console.error(`Failed to send to ${row.id}: ${e.message}`);
                 if (e.message.includes('chat not found')) {
-                    console.log(`Removing channel ${row.id} from the database.`);
+                    console.log(`Removing invalid channel ${row.id} from DB.`);
                     await db.query('DELETE FROM channels WHERE id = $1', [row.id]);
                 }
             }
         }
+        bot.sendMessage(chatId, '🎉 Your post has been sent to all channels!');
+    } catch (e) {
+        console.error('Error broadcasting:', e);
+        bot.sendMessage(chatId, '❌ An error occurred while sending your post.');
+    }
 
-        bot.sendMessage(chatId, 'Your post has been successfully sent to all channels!');
-        userState[chatId] = { step: 'menu' };
-    });
+    userState[chatId] = { step: 'menu' };
 });
 
+// === Collect Content ===
 bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
     if (msg.chat.type !== 'private') return;
 
+    const chatId = msg.chat.id;
     if (userState[chatId] && userState[chatId].step === 'collecting_content') {
         const { content } = userState[chatId];
-        let newContent = {};
+        let newContent = null;
 
-        if (msg.text && !msg.photo && !msg.video && !msg.animation && !msg.sticker) {
-            if (msg.text.toLowerCase() === '/done') return;
+        if (msg.text && msg.text.toLowerCase() !== '/done') {
             newContent = { type: 'text', value: msg.text };
         } else if (msg.photo) {
-            const fileId = msg.photo[msg.photo.length - 1].file_id;
-            newContent = { type: 'photo', value: fileId, caption: msg.caption };
+            newContent = { type: 'photo', value: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption };
         } else if (msg.video) {
-            const fileId = msg.video.file_id;
-            newContent = { type: 'video', value: fileId, caption: msg.caption };
+            newContent = { type: 'video', value: msg.video.file_id, caption: msg.caption };
         } else if (msg.animation) {
-            const fileId = msg.animation.file_id;
-            newContent = { type: 'animation', value: fileId };
+            newContent = { type: 'animation', value: msg.animation.file_id };
         } else if (msg.sticker) {
-            const fileId = msg.sticker.file_id;
-            newContent = { type: 'sticker', value: fileId };
+            newContent = { type: 'sticker', value: msg.sticker.file_id };
         }
 
-        if (Object.keys(newContent).length > 0) {
+        if (newContent) {
             content.push(newContent);
-            bot.sendMessage(chatId, 'Content received. Send more content or type /done to post.');
-        }
-    } else {
-        const text = msg.text ? msg.text.toLowerCase() : '';
-        if (text && !text.startsWith('/')) {
-            bot.sendMessage(chatId, 'Silakan pilih dari menu atau gunakan perintah /start untuk menampilkan menu.');
+            bot.sendMessage(chatId, '✅ Content added. Send more or type /done to finish.');
         }
     }
 });
