@@ -30,38 +30,18 @@ bot.getMe().then(info => {
     console.log(`Bot started as @${info.username} (ID: ${botId})`);
 });
 
-// === Auto-detect when added or removed as admin ===
-bot.on('my_chat_member', async (update) => {
-    const chat = update.chat;
-    const newStatus = update.new_chat_member.status;
-
-    // Only handle channels
-    if (chat.type !== 'channel') return;
-
+async function isBotAdmin(chatId) {
     try {
-        if (newStatus === 'administrator') {
-            // Add to DB if not exists
-            const res = await db.query('SELECT * FROM channels WHERE id = $1', [chat.id]);
-            if (res.rows.length === 0) {
-                await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chat.id, chat.title]);
-                console.log(`✅ Channel registered automatically: ${chat.title} (${chat.id})`);
-            }
-        } else if (newStatus === 'left' || newStatus === 'kicked' || newStatus === 'member') {
-            // Remove if bot is no longer admin
-            await db.query('DELETE FROM channels WHERE id = $1', [chat.id]);
-            console.log(`❌ Channel removed automatically: ${chat.title} (${chat.id})`);
-        }
+        const member = await bot.getChatMember(chatId, botId);
+        return member.status === 'administrator' || member.status === 'creator';
     } catch (e) {
-        console.error('Error updating channel list:', e);
+        return false;
     }
-});
+}
 
-// === Menu ===
 function sendMainMenu(chatId) {
     const welcomeMessage = "Welcome to the Broadcast Bot!\n\n" +
-        "➤ Add me as an admin in your channels.\n" +
-        "➤ I will automatically detect them.\n" +
-        "➤ You can then create a post once and I will send it to all your registered channels.";
+        "You can add me as admin to your channels, register them, and then create posts that I will send to all registered channels.";
     bot.sendMessage(chatId, welcomeMessage, {
         reply_markup: {
             keyboard: [
@@ -83,13 +63,40 @@ bot.onText(/\/start/, (msg) => {
     sendMainMenu(msg.chat.id);
 });
 
-// === Create Post ===
+bot.onText(/\/register|\/addchannel/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (msg.chat.type === 'private') {
+        bot.sendMessage(chatId, 'This command must be used inside a channel where I am an admin.');
+        return;
+    }
+
+    const botIsAdmin = await isBotAdmin(chatId);
+    if (!botIsAdmin) {
+        bot.sendMessage(chatId, 'I must be an administrator in this channel to register it.');
+        return;
+    }
+
+    try {
+        const res = await db.query('SELECT * FROM channels WHERE id = $1', [chatId]);
+        if (res.rows.length === 0) {
+            await db.query('INSERT INTO channels (id, title) VALUES ($1, $2)', [chatId, msg.chat.title]);
+            bot.sendMessage(chatId, '✅ Channel successfully registered!');
+            console.log(`Channel registered: ${msg.chat.title} (${chatId})`);
+        } else {
+            bot.sendMessage(chatId, '⚠️ This channel is already registered.');
+        }
+    } catch (e) {
+        console.error('Error registering channel:', e);
+        bot.sendMessage(chatId, '❌ An error occurred while trying to register the channel.');
+    }
+});
+
 bot.onText(/Create New Post/, async (msg) => {
     if (msg.chat.type !== 'private') return;
 
     const res = await db.query('SELECT * FROM channels');
     if (res.rows.length === 0) {
-        bot.sendMessage(msg.chat.id, 'You have not added me to any channels yet. Please add me as an admin first.');
+        bot.sendMessage(msg.chat.id, 'You have not added this bot to any channels yet. Please add me as an admin first.');
         return;
     }
 
@@ -97,7 +104,6 @@ bot.onText(/Create New Post/, async (msg) => {
     bot.sendMessage(msg.chat.id, 'Please send the content you want to post (text, photos, videos, stickers, or GIFs). Type /done when finished.');
 });
 
-// === View Channels ===
 bot.onText(/View My Channels/, async (msg) => {
     if (msg.chat.type !== 'private') return;
 
@@ -113,7 +119,6 @@ bot.onText(/View My Channels/, async (msg) => {
     }
 });
 
-// === Finish Post ===
 bot.onText(/\/done/, async (msg) => {
     const chatId = msg.chat.id;
     if (msg.chat.type !== 'private' || !userState[chatId] || userState[chatId].step !== 'collecting_content') {
@@ -165,7 +170,6 @@ bot.onText(/\/done/, async (msg) => {
     userState[chatId] = { step: 'menu' };
 });
 
-// === Collect Content ===
 bot.on('message', async (msg) => {
     if (msg.chat.type !== 'private') return;
 
