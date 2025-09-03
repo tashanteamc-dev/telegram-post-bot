@@ -1,4 +1,4 @@
-// bot.js - XFTEAM Telegram Bot (Full, Sticker + Auto-post + Premium + Auto-channel + 24h)
+// bot.js - XFTEAM Telegram Bot Full Version
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
@@ -7,6 +7,7 @@ const express = require("express");
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
+const PASSWORD = "xfbest"; // <-- Password for access
 
 if (!BOT_TOKEN || !DATABASE_URL) {
   console.error("BOT_TOKEN and DATABASE_URL are required!");
@@ -40,7 +41,7 @@ db.connect()
 
 // ---------- Bot ----------
 const bot = new Telegraf(BOT_TOKEN);
-const userState = {}; // { userId: { content[] } }
+const userState = {}; // { userId: { step, content[] } }
 
 let BOT_ID = null;
 bot.telegram.getMe().then((me) => (BOT_ID = me.id));
@@ -103,10 +104,12 @@ app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 // ---------- Start ----------
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
-  userState[ctx.from.id] = { content: [] };
+
+  // Set state for password check
+  userState[ctx.from.id] = { step: "awaiting_password", content: [] };
+
   await ctx.reply(
-    "Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM\n\nSend text, photo, video, GIF, or sticker. Everything will be forwarded automatically to your channels.",
-    Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize()
+    "Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM\n\nPlease enter the password to use this bot:"
   );
 });
 
@@ -146,11 +149,11 @@ bot.hears("📋 View My Channels", async (ctx) => {
 
 // ---------- Cancel ----------
 bot.command("cancel", async (ctx) => {
-  userState[ctx.from.id] = { content: [] };
+  userState[ctx.from.id] = { step: "menu", content: [] };
   return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
 });
 bot.hears("❌ Cancel", async (ctx) => {
-  userState[ctx.from.id] = { content: [] };
+  userState[ctx.from.id] = { step: "menu", content: [] };
   return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
 });
 
@@ -158,34 +161,47 @@ bot.hears("❌ Cancel", async (ctx) => {
 bot.on("message", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   const msg = ctx.message;
-  if (!msg) return;
+  if (!msg || !msg.text && !msg.photo && !msg.video && !msg.animation && !msg.sticker) return;
 
-  if (!userState[ctx.from.id]) userState[ctx.from.id] = { content: [] };
   const state = userState[ctx.from.id];
-  let item = null;
+  if (!state) return;
 
-  if (msg.text) {
-    item = { type: "text", value: msg.text };
-  } else if (msg.photo) {
-    item = { type: "photo", file_id: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption || "" };
-  } else if (msg.video) {
-    item = { type: "video", file_id: msg.video.file_id, caption: msg.caption || "" };
-  } else if (msg.animation) {
-    item = { type: "animation", file_id: msg.animation.file_id };
-  } else if (msg.sticker) {
-    item = { type: "sticker", file_id: msg.sticker.file_id };
+  // Password check first
+  if (state.step === "awaiting_password") {
+    if (msg.text === PASSWORD) {
+      state.step = "menu";
+      await ctx.reply(
+        "✅ Password correct! You can now use the bot.",
+        Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize()
+      );
+    } else {
+      await ctx.reply("❌ Wrong password! Please contact @kasiatashan");
+    }
+    return;
   }
 
-  if (item) {
-    state.content.push(item);
-    await ctx.reply("✅ Content received. Sending to all your channels...");
+  // Only collect content if user passed password
+  if (state.step === "menu") {
+    let item = null;
+    if (msg.text) {
+      item = { type: "text", value: msg.text };
+    } else if (msg.photo) {
+      item = { type: "photo", file_id: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption || "" };
+    } else if (msg.video) {
+      item = { type: "video", file_id: msg.video.file_id, caption: msg.caption || "" };
+    } else if (msg.animation) {
+      item = { type: "animation", file_id: msg.animation.file_id };
+    } else if (msg.sticker) {
+      item = { type: "sticker", file_id: msg.sticker.file_id };
+    }
 
-    // Broadcast immediately
-    await broadcastContent(ctx.from.id, state.content);
-
-    // Clear state
-    userState[ctx.from.id] = { content: [] };
-    await ctx.reply("✅ Done! Post sent to all your channels.");
+    if (item) {
+      state.content.push(item);
+      await ctx.reply("✅ Content received. Sending to all your channels...");
+      await broadcastContent(ctx.from.id, state.content);
+      state.content = [];
+      await ctx.reply("✅ Done! Post sent to all your channels.");
+    }
   }
 });
 
