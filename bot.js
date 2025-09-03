@@ -52,7 +52,6 @@ bot.start((ctx) => {
 
 // ==== ACTION HANDLERS ====
 bot.action("CREATE_POST", (ctx) => {
-  // Store user's state for the posting process
   ctx.session = { post: { step: "collecting_content" } };
   ctx.reply("Please send the content you want to post (text, photos, stickers, etc.). Type /done when finished.");
 });
@@ -86,14 +85,11 @@ bot.command("addchannel", async (ctx) => {
     return;
   }
 
-  // Make sure bot is an admin in the channel
   try {
     const chatMember = await bot.telegram.getChatMember(chatId, bot.botInfo.id);
     if (chatMember.status === "administrator") {
-      // Check if channel is already registered for this user
       const res = await db.query("SELECT * FROM user_channels WHERE user_id = $1 AND channel_id = $2", [userId, chatId]);
       if (res.rows.length === 0) {
-        // Add channel to database
         await db.query("INSERT INTO user_channels (user_id, channel_id, channel_title) VALUES ($1, $2, $3)", [userId, chatId, ctx.message.chat.title]);
         ctx.reply(`Channel "${ctx.message.chat.title}" successfully registered for you!`);
       } else {
@@ -131,12 +127,10 @@ bot.on("message", async (ctx) => {
         ctx.reply("Okay, now select the channel where you want to post:", Markup.inlineKeyboard(channelButtons));
       }
     }
-    // Reset state after handling /done
     delete ctx.session.post;
     return;
   }
 
-  // Handle different message types
   if (ctx.message.text) {
     newContent = { type: "text", value: ctx.message.text };
   } else if (ctx.message.photo) {
@@ -186,7 +180,6 @@ bot.action(/post_to_(.+)/, async (ctx) => {
     console.error(err);
     await ctx.reply("❌ Failed to send post. Please make sure the bot is still an admin in the channel.");
   }
-  // Clear the session state
   delete ctx.session.post;
 });
 
