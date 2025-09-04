@@ -165,11 +165,11 @@ bot.hears("📋 View My Channels", async (ctx) => {
 // ---------- Cancel ----------
 bot.command("cancel", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
+  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
 });
-bot.hears("❌ Cancel", async (ctx) => {
+bot.hears("❌ Cancel Send", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
+  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
 });
 
 // ---------- Collect & Auto Broadcast ----------
@@ -186,7 +186,7 @@ bot.on("message", async (ctx) => {
       state.step = "menu";
       await ctx.reply(
         "✅ Password correct! You can now use the bot.",
-        Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize()
+        Markup.keyboard([["📋 View My Channels"], ["❌ Cancel Send"]]).resize()
       );
     } else {
       await ctx.reply("❌ Wrong password! Please contact @kasiatashan");
