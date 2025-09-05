@@ -2,8 +2,7 @@
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
-// Pustaka 'http' diperlukan untuk fitur "ping sendiri"
-const http = require('http'); 
+const http = require('http');
 
 // ---------- Config ----------
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -12,7 +11,6 @@ const PORT = process.env.PORT || 3000;
 const PASSWORD = "xfbest"; // <-- Password for access
 
 if (!BOT_TOKEN || !DATABASE_URL) {
-  // console.error("BOT_TOKEN and DATABASE_URL are required!"); // Dinonaktifkan untuk menjaga konsol tetap bersih
   process.exit(1);
 }
 
@@ -34,10 +32,8 @@ db.connect()
         PRIMARY KEY (user_id, channel_id)
       );
     `);
-    // console.log("Database ready"); // Dinonaktifkan
   })
   .catch((err) => {
-    // console.error("DB connection error:", err); // Dinonaktifkan
     process.exit(1);
   });
 
@@ -107,7 +103,6 @@ async function broadcastContent(userId, content) {
         }
       }
     } catch (e) {
-      // console.error(`Failed to send to ${ch.channel_id}:`, e.message || e); // Dinonaktifkan
       if (e.message && e.message.toLowerCase().includes("chat not found")) {
         await db.query("DELETE FROM channels WHERE user_id=$1 AND channel_id=$2", [userId, ch.channel_id]);
       }
@@ -138,7 +133,6 @@ bot.on("my_chat_member", async (ctx) => {
 
     if (new_chat_member.status === "administrator") {
       const saved = await upsertChannel(from.id, chat.id);
-      // console.log(`Auto-registered channel ${saved.title} for user ${from.id}`); // Dinonaktifkan
       try {
         await bot.telegram.sendMessage(
           from.id,
@@ -147,10 +141,8 @@ bot.on("my_chat_member", async (ctx) => {
       } catch {}
     } else if (new_chat_member.status === "left" || new_chat_member.status === "kicked") {
       await db.query("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
-      // console.log(`Removed channel ${chat.title} from DB`); // Dinonaktifkan
     }
   } catch (e) {
-    // console.error("my_chat_member error:", e.message || e); // Dinonaktifkan
   }
 });
 
@@ -167,11 +159,11 @@ bot.hears("📋 View My Channels", async (ctx) => {
 // ---------- Cancel ----------
 bot.command("cancel", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
+  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
 });
 bot.hears("❌ Cancel Send", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
+  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
 });
 
 // ---------- Collect & Auto Broadcast ----------
@@ -188,7 +180,7 @@ bot.on("message", async (ctx) => {
       state.step = "menu";
       await ctx.reply(
         "✅ Password correct! You can now use the bot.",
-        Markup.keyboard([["📋 View My Channels"], ["❌ Cancel Send"]]).resize()
+        Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize()
       );
     } else {
       await ctx.reply("❌ Wrong password! Please contact @kasiatashan");
@@ -220,22 +212,15 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// ---------- Launch ----------
-const PORT = process.env.PORT || 3000;
+// ---------- Launch & Webhook Setup ----------
 app.listen(PORT, async () => {
-  // console.log(`Server listening on port ${PORT}`); // Dinonaktifkan
   const WEBHOOK_URL = process.env.WEBHOOK_URL;
   if (WEBHOOK_URL) {
     await bot.telegram.setWebhook(WEBHOOK_URL);
-    // console.log("Webhook has been set successfully."); // Dinonaktifkan
-  } else {
-    // console.error("WEBHOOK_URL is not set!"); // Dinonaktifkan
   }
 });
 
-// ---------- INTERNAL PINGER (Keep-Alive) ----------
-// Fitur ini membuat bot mem-ping dirinya sendiri setiap 3 menit
+// ---------- Self-Ping Maksimal ----------
 setInterval(function() {
-    // Hanya melakukan GET request ke URL webhook bot
     http.get(process.env.WEBHOOK_URL);
-}, 180000); // 180000 milidetik = 3 menit
+}, 60000); // Every 1 minute (60000 milliseconds)
