@@ -136,7 +136,7 @@ bot.on("my_chat_member", async (ctx) => {
       try {
         await bot.telegram.sendMessage(
           from.id,
-          `✅ Channel linked: ${saved.title} ${saved.username || \`(\${saved.channel_id})\`}`
+          `✅ Channel linked: ${saved.title} ${saved.username || `(${saved.channel_id})`}`
         );
       } catch {}
     } else if (new_chat_member.status === "left" || new_chat_member.status === "kicked") {
@@ -152,7 +152,7 @@ bot.hears("📋 View My Channels", async (ctx) => {
   const channels = await listUserChannels(ctx.from.id);
   if (!channels.length) return ctx.reply("You have not linked any channels yet.");
   let text = "📌 Your Channels:\n";
-  for (const ch of channels) text += `• ${ch.title} ${ch.username || \`(\${ch.channel_id})\`}\n`;
+  for (const ch of channels) text += `• ${ch.title} ${ch.username || `(${ch.channel_id})`}\n`;
   return ctx.reply(text);
 });
 
