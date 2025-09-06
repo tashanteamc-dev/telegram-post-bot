@@ -1,4 +1,4 @@
-// bot.js - XFTEAM Telegram Bot (Polling + Keep Alive for Free Replit)
+// bot.js - XFTEAM Telegram Bot Final Version with Auto Keep Alive
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
@@ -8,11 +8,10 @@ const https = require("https");
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
-const PASSWORD = "xfbest"; // password bot
-const OWNER_ID = "YOUR_TELEGRAM_ID"; // ganti dengan Telegram ID kamu
+const PASSWORD = "xfbest"; // <-- Password for access
 
 if (!BOT_TOKEN || !DATABASE_URL) {
-  console.error("❌ BOT_TOKEN or DATABASE_URL missing!");
+  console.error("❌ BOT_TOKEN and DATABASE_URL are required!");
   process.exit(1);
 }
 
@@ -24,7 +23,6 @@ const db = new Client({
 
 db.connect()
   .then(async () => {
-    console.log("✅ Database connected");
     await db.query(`
       CREATE TABLE IF NOT EXISTS channels (
         user_id TEXT NOT NULL,
@@ -35,9 +33,10 @@ db.connect()
         PRIMARY KEY (user_id, channel_id)
       );
     `);
+    console.log("✅ Database connected");
   })
   .catch((err) => {
-    console.error("❌ Database connection error", err);
+    console.error("DB error:", err.message);
     process.exit(1);
   });
 
@@ -46,7 +45,10 @@ const bot = new Telegraf(BOT_TOKEN);
 const userState = {}; // { userId: { step, content[] } }
 
 let BOT_ID = null;
-bot.telegram.getMe().then((me) => (BOT_ID = me.id));
+bot.telegram.getMe().then((me) => {
+  BOT_ID = me.id;
+  console.log("🤖 Bot started as @" + me.username);
+});
 
 // ---------- Helpers ----------
 async function upsertChannel(userId, channelId) {
@@ -55,9 +57,9 @@ async function upsertChannel(userId, channelId) {
   const username = chat.username ? `@${chat.username}` : null;
   await db.query(
     `INSERT INTO channels (user_id, channel_id, title, username)
-      VALUES ($1,$2,$3,$4)
-      ON CONFLICT (user_id, channel_id)
-      DO UPDATE SET title=EXCLUDED.title, username=EXCLUDED.username`,
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (user_id, channel_id)
+     DO UPDATE SET title=EXCLUDED.title, username=EXCLUDED.username`,
     [String(userId), String(channelId), title, username]
   );
   return { channel_id: channelId, title, username };
@@ -75,39 +77,23 @@ async function broadcastContent(userId, content) {
   const channels = await listUserChannels(userId);
   if (!channels.length) return;
 
-  const media = content.filter(item => item.type === "photo" || item.type === "video");
-  const text = content.filter(item => item.type === "text");
-
   for (const ch of channels) {
     try {
-      if (media.length > 1) {
-        const mediaGroup = media.map(item => ({
-          type: item.type,
-          media: item.file_id,
-          caption: item.caption,
-        }));
-        if (text.length > 0) {
-          mediaGroup[0].caption = text[0].value;
-          mediaGroup[0].parse_mode = "HTML";
-        }
-        await bot.telegram.sendMediaGroup(ch.channel_id, mediaGroup);
-      } else {
-        for (const item of content) {
-          if (item.type === "text") {
-            await bot.telegram.sendMessage(ch.channel_id, item.value, { parse_mode: "HTML" });
-          } else if (item.type === "photo") {
-            await bot.telegram.sendPhoto(ch.channel_id, item.file_id, { caption: item.caption || "" });
-          } else if (item.type === "video") {
-            await bot.telegram.sendVideo(ch.channel_id, item.file_id, { caption: item.caption || "" });
-          } else if (item.type === "animation") {
-            await bot.telegram.sendAnimation(ch.channel_id, item.file_id);
-          } else if (item.type === "sticker") {
-            await bot.telegram.sendSticker(ch.channel_id, item.file_id);
-          }
+      for (const item of content) {
+        if (item.type === "text") {
+          await bot.telegram.sendMessage(ch.channel_id, item.value, { parse_mode: "HTML" });
+        } else if (item.type === "photo") {
+          await bot.telegram.sendPhoto(ch.channel_id, item.file_id, { caption: item.caption || "" });
+        } else if (item.type === "video") {
+          await bot.telegram.sendVideo(ch.channel_id, item.file_id, { caption: item.caption || "" });
+        } else if (item.type === "animation") {
+          await bot.telegram.sendAnimation(ch.channel_id, item.file_id);
+        } else if (item.type === "sticker") {
+          await bot.telegram.sendSticker(ch.channel_id, item.file_id);
         }
       }
     } catch (e) {
-      console.error("❌ Broadcast error:", e.message);
+      console.error(`❌ Failed to send to ${ch.channel_id}:`, e.message || e);
       if (e.message && e.message.toLowerCase().includes("chat not found")) {
         await db.query("DELETE FROM channels WHERE user_id=$1 AND channel_id=$2", [userId, ch.channel_id]);
       }
@@ -115,21 +101,16 @@ async function broadcastContent(userId, content) {
   }
 }
 
-// ---------- Express keep-alive ----------
+// ---------- Express Keep Alive ----------
 const app = express();
-app.get("/", (_, res) => res.send("Bot is running with polling ✅"));
+app.get("/", (_, res) => res.send("✅ Bot is running"));
+app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
 
-app.listen(PORT, () => {
-  console.log(`✅ Server listening on port ${PORT}`);
-});
-
-// ---------- Bot Commands ----------
+// ---------- Bot Logic ----------
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
-
   userState[ctx.from.id] = { step: "awaiting_password", content: [] };
-
-  await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM\n");
+  await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM");
   await ctx.reply("Please enter the password to use this bot:");
 });
 
@@ -149,9 +130,7 @@ bot.on("my_chat_member", async (ctx) => {
     } else if (["left", "kicked"].includes(new_chat_member.status)) {
       await db.query("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
     }
-  } catch (e) {
-    console.error("❌ Channel link error:", e.message);
-  }
+  } catch {}
 });
 
 bot.hears("📋 View My Channels", async (ctx) => {
@@ -165,11 +144,11 @@ bot.hears("📋 View My Channels", async (ctx) => {
 
 bot.command("cancel", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
+  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
 });
-bot.hears("❌ Cancel Send", async (ctx) => {
+bot.hears("❌ Cancel", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
+  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
 });
 
 bot.on("message", async (ctx) => {
@@ -185,7 +164,7 @@ bot.on("message", async (ctx) => {
       state.step = "menu";
       await ctx.reply(
         "✅ Password correct! You can now use the bot.",
-        Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize()
+        Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize()
       );
     } else {
       await ctx.reply("❌ Wrong password! Please contact @kasiatashan");
@@ -217,15 +196,19 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// ---------- Launch Bot with Polling ----------
-bot.launch()
-  .then(() => {
-    console.log("🤖 Bot launched with polling");
-    if (OWNER_ID) bot.telegram.sendMessage(OWNER_ID, "✅ Bot is now online and running 24/7!");
-  })
-  .catch(err => console.error("❌ Launch error:", err));
+// ---------- Launch ----------
+bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
 
-// ---------- Self Ping ----------
+// ---------- Self Ping every 1 min ----------
 setInterval(() => {
-  https.get(`https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
-}, 60000); // ping every 1 minute
+  const url = `https://telegram-post-bot.besttashan.repl.co`;
+  https.get(url, (res) => {
+    console.log("🔄 Self-ping:", url, res.statusCode);
+  }).on("error", (err) => {
+    console.error("❌ Self-ping error:", err.message);
+  });
+}, 60000);
+
+// Graceful shutdown
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
