@@ -1,4 +1,4 @@
-// bot.js - XFTEAM Telegram Bot Final with Start Button & Auto Keep Alive
+// bot.js - XFTEAM Telegram Bot Final
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
@@ -8,7 +8,14 @@ const https = require("https");
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
-const PASSWORD = "xfbest"; // <-- Password for access
+const PASSWORD = "xfbest"; // Password untuk akses
+
+// 🔹 Tentukan BASE_URL otomatis (Replit / local)
+const BASE_URL =
+  process.env.BASE_URL ||
+  (process.env.REPL_SLUG && process.env.REPL_OWNER
+    ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+    : `http://localhost:${PORT}`);
 
 if (!BOT_TOKEN || !DATABASE_URL) {
   console.error("❌ BOT_TOKEN and DATABASE_URL are required!");
@@ -49,6 +56,13 @@ bot.telegram.getMe().then((me) => {
 });
 
 // ---------- Helpers ----------
+function mainMenu() {
+  return Markup.keyboard([
+    ["▶️ Start"],
+    ["📋 My Channels", "❌ Cancel"]
+  ]).resize();
+}
+
 async function upsertChannel(userId, channelId) {
   const chat = await bot.telegram.getChat(channelId);
   const title = chat.title || channelId;
@@ -93,124 +107,111 @@ async function broadcastContent(userId, content) {
     } catch (e) {
       console.error(`❌ Failed to send to ${ch.channel_id}:`, e.message || e);
       if (e.message && e.message.toLowerCase().includes("chat not found")) {
-        await db.query("DELETE FROM channels WHERE user_id=$1 AND channel_id=$2", [userId, ch.channel_id]);
+        await db.query(
+          "DELETE FROM channels WHERE user_id=$1 AND channel_id=$2",
+          [String(userId), String(ch.channel_id)]
+        );
       }
     }
   }
 }
 
-// ---------- Express Keep Alive ----------
-const app = express();
-app.get("/", (_, res) => res.send("✅ Bot is running"));
-app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
-
-// ---------- Bot Logic ----------
+// ---------- Bot Commands ----------
 bot.start(async (ctx) => {
-  if (ctx.chat.type !== "private") return;
-  userState[ctx.from.id] = { step: "awaiting_password", content: [] };
-
-  await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM");
-  await ctx.reply(
-    "Please enter the password to use this bot:",
-    Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize()
-  );
+  const userId = ctx.from.id;
+  if (!userState[userId]) {
+    userState[userId] = { step: "password", content: [] };
+    await ctx.reply("🔑 Please enter the password to access the bot:");
+  } else {
+    await ctx.reply("🚀 Bot is ready!", mainMenu());
+  }
 });
 
-bot.on("my_chat_member", async (ctx) => {
-  try {
-    const { chat, from, new_chat_member } = ctx.update.my_chat_member;
-    if (chat.type !== "channel") return;
-
-    if (new_chat_member.status === "administrator") {
-      const saved = await upsertChannel(from.id, chat.id);
-      try {
-        await bot.telegram.sendMessage(
-          from.id,
-          `✅ Channel linked: ${saved.title} ${saved.username || `(${saved.channel_id})`}`
-        );
-      } catch {}
-    } else if (["left", "kicked"].includes(new_chat_member.status)) {
-      await db.query("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
-    }
-  } catch {}
-});
-
-bot.hears("📋 View My Channels", async (ctx) => {
-  if (ctx.chat.type !== "private") return;
-  const channels = await listUserChannels(ctx.from.id);
-  if (!channels.length) return ctx.reply("You have not linked any channels yet.");
-  let text = "📌 Your Channels:\n";
-  for (const ch of channels) text += `• ${ch.title} ${ch.username || `(${ch.channel_id})`}\n`;
-  return ctx.reply(text);
-});
-
-bot.command("cancel", async (ctx) => {
-  userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
-});
-bot.hears("❌ Cancel", async (ctx) => {
-  userState[ctx.from.id] = { step: "menu", content: [] };
-  return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize());
-});
-
-bot.on("message", async (ctx) => {
-  if (ctx.chat.type !== "private") return;
-  const msg = ctx.message;
-  if (!msg || !msg.text && !msg.photo && !msg.video && !msg.animation && !msg.sticker) return;
-
-  const state = userState[ctx.from.id];
-  if (!state) return;
-
-  if (state.step === "awaiting_password") {
-    if (msg.text === PASSWORD) {
-      state.step = "menu";
-      await ctx.reply(
-        "✅ Password correct! You can now use the bot.",
-        Markup.keyboard([["📋 View My Channels"], ["❌ Cancel"]]).resize()
-      );
+// Password check
+bot.on("text", async (ctx, next) => {
+  const userId = ctx.from.id;
+  const state = userState[userId];
+  if (state && state.step === "password") {
+    if (ctx.message.text === PASSWORD) {
+      userState[userId] = { step: "menu", content: [] };
+      await ctx.reply("✅ Password correct! Welcome to XFTEAM Bot.", mainMenu());
     } else {
-      await ctx.reply("❌ Wrong password! Please contact @kasiatashan");
+      await ctx.reply("❌ Wrong password. Try again:");
     }
     return;
   }
+  return next();
+});
 
-  if (state.step === "menu") {
-    let item = null;
-    if (msg.text) {
-      item = { type: "text", value: msg.text };
-    } else if (msg.photo) {
-      item = { type: "photo", file_id: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption || "" };
-    } else if (msg.video) {
-      item = { type: "video", file_id: msg.video.file_id, caption: msg.caption || "" };
-    } else if (msg.animation) {
-      item = { type: "animation", file_id: msg.animation.file_id };
-    } else if (msg.sticker) {
-      item = { type: "sticker", file_id: msg.sticker.file_id };
-    }
+// Handle "Start" button
+bot.hears("▶️ Start", async (ctx) => {
+  userState[ctx.from.id] = { step: "menu", content: [] };
+  await ctx.reply("🚀 Bot is ready! Send me text, photo, video, sticker or gif and I’ll broadcast it.", mainMenu());
+});
 
-    if (item) {
-      state.content.push(item);
-      await ctx.reply("✅ Content received. Sending to all your channels...");
-      await broadcastContent(ctx.from.id, state.content);
-      state.content = [];
-      await ctx.reply("✅ Done! Post sent to all your channels.");
-    }
+// Handle "My Channels"
+bot.hears("📋 My Channels", async (ctx) => {
+  const channels = await listUserChannels(ctx.from.id);
+  if (!channels.length) {
+    return ctx.reply("📭 You have no channels yet.", mainMenu());
+  }
+  let text = "📋 Your channels:\n\n";
+  channels.forEach((c, i) => {
+    text += `${i + 1}. ${c.title || c.channel_id} (${c.username || "no username"})\n`;
+  });
+  await ctx.reply(text, mainMenu());
+});
+
+// Handle "Cancel"
+bot.hears("❌ Cancel", async (ctx) => {
+  userState[ctx.from.id] = { step: "menu", content: [] };
+  await ctx.reply("❌ Cancelled. Back to main menu.", mainMenu());
+});
+
+// ---------- Content Capture ----------
+bot.on(["text", "photo", "video", "animation", "sticker"], async (ctx) => {
+  const userId = ctx.from.id;
+  const state = userState[userId];
+  if (!state || state.step !== "menu") return;
+
+  let contentItem = null;
+  if (ctx.message.text) {
+    contentItem = { type: "text", value: ctx.message.text };
+  } else if (ctx.message.photo) {
+    const file = ctx.message.photo.pop();
+    contentItem = { type: "photo", file_id: file.file_id, caption: ctx.message.caption };
+  } else if (ctx.message.video) {
+    contentItem = { type: "video", file_id: ctx.message.video.file_id, caption: ctx.message.caption };
+  } else if (ctx.message.animation) {
+    contentItem = { type: "animation", file_id: ctx.message.animation.file_id };
+  } else if (ctx.message.sticker) {
+    contentItem = { type: "sticker", file_id: ctx.message.sticker.file_id };
+  }
+
+  if (contentItem) {
+    state.content.push(contentItem);
+    await ctx.reply("✅ Content saved! It will be broadcast to your channels.", mainMenu());
+    await broadcastContent(userId, [contentItem]);
   }
 });
 
-// ---------- Launch ----------
-bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
+// ---------- Express Keep-Alive ----------
+const app = express();
+app.get("/", (req, res) => res.send("Bot is running ✅"));
+app.listen(PORT, () => {
+  console.log(`✅ Server listening on port ${PORT}`);
+});
 
-// ---------- Self Ping every 1 min ----------
+// ---------- Auto Self-Ping ----------
 setInterval(() => {
-  const url = `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/`;
-  https.get(url, (res) => {
-    console.log("🔄 Self-ping:", url, res.statusCode);
-  }).on("error", (err) => {
-    console.error("❌ Self-ping error:", err.message);
-  });
-}, 60000);
+  https
+    .get(BASE_URL, (res) => {
+      console.log("🔄 Self-ping success:", res.statusCode);
+    })
+    .on("error", (err) => {
+      console.error("❌ Self-ping error:", err.message);
+    });
+}, 5 * 60 * 1000); // every 5 minutes
 
-// Graceful shutdown
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+// ---------- Launch Bot ----------
+bot.launch().then(() => console.log("🚀 Bot launched successfully"));
