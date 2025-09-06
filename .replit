@@ -1,4 +1,5 @@
 modules = ["nodejs-20"]
+
 [agent]
 expertMode = true
 
@@ -6,29 +7,22 @@ expertMode = true
 channel = "stable-25_05"
 
 [workflows]
-runButton = "Project"
+runButton = "Telegram Bot"
 
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Telegram Bot"
-
+# Workflow utama
 [[workflows.workflow]]
 name = "Telegram Bot"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm start"
-waitForPort = 3000
+  [[workflows.workflow.tasks]]
+  task = "shell.exec"
+  args = "npm start"
+  waitForPort = 3000
 
 [workflows.workflow.metadata]
 outputType = "console"
 
+# Port mapping
 [[ports]]
 localPort = 3000
 externalPort = 80

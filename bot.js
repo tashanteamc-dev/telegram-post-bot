@@ -197,11 +197,11 @@ bot.on("message", async (ctx) => {
 });
 
 // ---------- Launch ----------
-bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
+bot.launch().then(() => console.log("🚀 Bot launched"));
 
 // ---------- Self Ping every 1 min ----------
 setInterval(() => {
-  const url = `https://telegram-post-bot.besttashan.repl.co`;
+  const url = `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
   https.get(url, (res) => {
     console.log("🔄 Self-ping:", url, res.statusCode);
   }).on("error", (err) => {
