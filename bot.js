@@ -1,4 +1,4 @@
-// bot.js - XFTEAM Telegram Bot Final with Start Button & Auto Keep Alive
+// bot.js - XFTEAM Telegram Bot Auto-Restart Full Version
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
@@ -8,14 +8,14 @@ const https = require("https");
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
-const PASSWORD = "xfbest"; // <-- Password for access
+const PASSWORD = "xfbest";
 
 if (!BOT_TOKEN || !DATABASE_URL) {
   console.error("❌ BOT_TOKEN and DATABASE_URL are required!");
   process.exit(1);
 }
 
-// ---------- DB ----------
+// ---------- Database ----------
 const db = new Client({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -44,9 +44,7 @@ db.connect()
 const bot = new Telegraf(BOT_TOKEN);
 const userState = {}; // { userId: { step, content[] } }
 
-bot.telegram.getMe().then((me) => {
-  console.log("🤖 Bot started as @" + me.username);
-});
+bot.telegram.getMe().then((me) => console.log("🤖 Bot started as @" + me.username));
 
 // ---------- Helpers ----------
 async function upsertChannel(userId, channelId) {
@@ -78,17 +76,11 @@ async function broadcastContent(userId, content) {
   for (const ch of channels) {
     try {
       for (const item of content) {
-        if (item.type === "text") {
-          await bot.telegram.sendMessage(ch.channel_id, item.value, { parse_mode: "HTML" });
-        } else if (item.type === "photo") {
-          await bot.telegram.sendPhoto(ch.channel_id, item.file_id, { caption: item.caption || "" });
-        } else if (item.type === "video") {
-          await bot.telegram.sendVideo(ch.channel_id, item.file_id, { caption: item.caption || "" });
-        } else if (item.type === "animation") {
-          await bot.telegram.sendAnimation(ch.channel_id, item.file_id);
-        } else if (item.type === "sticker") {
-          await bot.telegram.sendSticker(ch.channel_id, item.file_id);
-        }
+        if (item.type === "text") await bot.telegram.sendMessage(ch.channel_id, item.value, { parse_mode: "HTML" });
+        else if (item.type === "photo") await bot.telegram.sendPhoto(ch.channel_id, item.file_id, { caption: item.caption || "" });
+        else if (item.type === "video") await bot.telegram.sendVideo(ch.channel_id, item.file_id, { caption: item.caption || "" });
+        else if (item.type === "animation") await bot.telegram.sendAnimation(ch.channel_id, item.file_id);
+        else if (item.type === "sticker") await bot.telegram.sendSticker(ch.channel_id, item.file_id);
       }
     } catch (e) {
       console.error(`❌ Failed to send to ${ch.channel_id}:`, e.message || e);
@@ -104,11 +96,12 @@ const app = express();
 app.get("/", (_, res) => res.send("✅ Bot is running"));
 app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
 
-// ---------- Bot Logic ----------
+// ---------- Menu ----------
 function mainMenu() {
-  return Markup.keyboard([["📋 My Channels", "▶️ Start"]]).resize();
+  return Markup.keyboard([["▶️ Start", "📋 My Channels"]]).resize();
 }
 
+// ---------- Bot Logic ----------
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
   userState[ctx.from.id] = { step: "awaiting_password", content: [] };
@@ -124,10 +117,7 @@ bot.on("my_chat_member", async (ctx) => {
     if (new_chat_member.status === "administrator") {
       const saved = await upsertChannel(from.id, chat.id);
       try {
-        await bot.telegram.sendMessage(
-          from.id,
-          `✅ Channel linked: ${saved.title} ${saved.username || `(${saved.channel_id})`}`
-        );
+        await bot.telegram.sendMessage(from.id, `✅ Channel linked: ${saved.title} ${saved.username || `(${saved.channel_id})`}`);
       } catch {}
     } else if (["left", "kicked"].includes(new_chat_member.status)) {
       await db.query("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
@@ -170,17 +160,11 @@ bot.on("message", async (ctx) => {
 
   if (state.step === "menu") {
     let item = null;
-    if (msg.text) {
-      item = { type: "text", value: msg.text };
-    } else if (msg.photo) {
-      item = { type: "photo", file_id: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption || "" };
-    } else if (msg.video) {
-      item = { type: "video", file_id: msg.video.file_id, caption: msg.caption || "" };
-    } else if (msg.animation) {
-      item = { type: "animation", file_id: msg.animation.file_id };
-    } else if (msg.sticker) {
-      item = { type: "sticker", file_id: msg.sticker.file_id };
-    }
+    if (msg.text) item = { type: "text", value: msg.text };
+    else if (msg.photo) item = { type: "photo", file_id: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption || "" };
+    else if (msg.video) item = { type: "video", file_id: msg.video.file_id, caption: msg.caption || "" };
+    else if (msg.animation) item = { type: "animation", file_id: msg.animation.file_id };
+    else if (msg.sticker) item = { type: "sticker", file_id: msg.sticker.file_id };
 
     if (item) {
       state.content.push(item);
@@ -195,19 +179,20 @@ bot.on("message", async (ctx) => {
 // ---------- Launch ----------
 bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
 
-// ---------- Self Ping every 1 min ----------
+// ---------- Self Ping Auto-Restart ----------
 setInterval(() => {
-  const slug = process.env.REPL_SLUG;
-  const owner = process.env.REPL_OWNER;
-  if (!slug || !owner) return;
-  const url = `https://${slug}.${owner}.repl.co`;
-  https.get(url, (res) => {
-    console.log("🔄 Self-ping:", url, res.statusCode);
-  }).on("error", (err) => {
-    console.error("❌ Self-ping error:", err.message);
-  });
+  let url = process.env.REPLIT_APP_URL;
+  if (!url) {
+    const slug = process.env.REPL_SLUG;
+    const owner = process.env.REPL_OWNER;
+    if (slug && owner) url = `https://${slug}.${owner}.replit.dev`;
+  }
+  if (!url) return;
+
+  https.get(url, (res) => console.log("🔄 Self-ping:", url, res.statusCode))
+       .on("error", (err) => console.error("❌ Self-ping error:", err.message));
 }, 60000);
 
-// Graceful shutdown
+// ---------- Graceful shutdown ----------
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
