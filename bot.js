@@ -1,4 +1,4 @@
-// bot.js - XFTEAM Telegram Bot Full Mantap Auto Restart & Keep Alive
+// bot.js - XFTEAM Telegram Bot Full Mantap
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
@@ -99,15 +99,15 @@ app.get("/", (_, res) => res.send("✅ Bot is running"));
 app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
 
 // ---------- Bot Logic ----------
-function mainMenu() {
-  return Markup.keyboard([["▶️ Start", "📋 My Channels"]]).resize();
+function initialMenu() {
+  return Markup.keyboard([["📋 My Channels", "/start"]]).resize();
 }
 
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
   userState[ctx.from.id] = { step: "awaiting_password", content: [] };
   await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM");
-  await ctx.reply("Please enter the password to use this bot:", mainMenu());
+  await ctx.reply("Please enter the password to use this bot:", initialMenu());
 });
 
 bot.on("my_chat_member", async (ctx) => {
@@ -135,12 +135,6 @@ bot.hears("📋 My Channels", async (ctx) => {
   return ctx.reply(text);
 });
 
-bot.hears("▶️ Start", async (ctx) => {
-  if (ctx.chat.type !== "private") return;
-  userState[ctx.from.id] = { step: "menu", content: [] };
-  await ctx.reply("✅ Ready! Send me text, photo, video, sticker or GIF and I’ll broadcast it.", mainMenu());
-});
-
 bot.on("message", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   const msg = ctx.message;
@@ -152,7 +146,7 @@ bot.on("message", async (ctx) => {
   if (state.step === "awaiting_password") {
     if (msg.text === PASSWORD) {
       state.step = "menu";
-      await ctx.reply("✅ Password correct! You can now use the bot.", mainMenu());
+      await ctx.reply("✅ Password correct! You can now use the bot.", initialMenu());
     } else {
       await ctx.reply("❌ Wrong password! Please contact @kasiatashan");
     }
@@ -172,26 +166,23 @@ bot.on("message", async (ctx) => {
       await ctx.reply("✅ Content received. Sending to all your channels...");
       await broadcastContent(ctx.from.id, state.content);
       state.content = [];
-      await ctx.reply("✅ Done! Post sent to all your channels.", mainMenu());
+      await ctx.reply("✅ Done! Post sent to all your channels.");
+      // Jangan munculkan keyboard lagi, biarkan tersembunyi sampai tekan /start
     }
   }
 });
 
 // ---------- Launch ----------
-function launchBot() {
-  bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
-}
-launchBot();
+bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
 
-// ---------- Self Ping & Auto Restart every 1 min ----------
+// ---------- Self Ping & Auto Restart ----------
 setInterval(() => {
   https.get(SELF_PING_URL, (res) => {
     console.log("🔄 Self-ping:", SELF_PING_URL, res.statusCode);
   }).on("error", (err) => {
     console.error("❌ Self-ping error:", err.message);
-    // Jika ping gagal, restart bot
     console.log("♻️ Restarting bot...");
-    exec("kill 1", (e) => e && console.error(e)); // di Replit, kill 1 akan restart container
+    exec("kill 1", (e) => e && console.error(e));
   });
 }, 60000);
 
