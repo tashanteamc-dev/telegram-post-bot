@@ -1,21 +1,23 @@
-// bot.js - XFTEAM Telegram Bot Auto-Restart Full Version
+// bot.js - XFTEAM Telegram Bot Full Mantap Auto Restart & Keep Alive
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
 const https = require("https");
+const { exec } = require("child_process");
 
 // ---------- Config ----------
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
-const PASSWORD = "xfbest";
+const PASSWORD = "xfbest"; 
+const SELF_PING_URL = "https://3a27c86c-5ec8-43ae-a6d0-386b59dc3e49-00-3c2ftuor2juik.sisko.replit.dev:3000";
 
 if (!BOT_TOKEN || !DATABASE_URL) {
   console.error("❌ BOT_TOKEN and DATABASE_URL are required!");
   process.exit(1);
 }
 
-// ---------- Database ----------
+// ---------- DB ----------
 const db = new Client({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -42,7 +44,7 @@ db.connect()
 
 // ---------- Bot ----------
 const bot = new Telegraf(BOT_TOKEN);
-const userState = {}; // { userId: { step, content[] } }
+const userState = {};
 
 bot.telegram.getMe().then((me) => console.log("🤖 Bot started as @" + me.username));
 
@@ -96,17 +98,16 @@ const app = express();
 app.get("/", (_, res) => res.send("✅ Bot is running"));
 app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
 
-// ---------- Menu ----------
+// ---------- Bot Logic ----------
 function mainMenu() {
   return Markup.keyboard([["▶️ Start", "📋 My Channels"]]).resize();
 }
 
-// ---------- Bot Logic ----------
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
   userState[ctx.from.id] = { step: "awaiting_password", content: [] };
   await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM");
-  await ctx.reply("Please enter the password to use this bot:");
+  await ctx.reply("Please enter the password to use this bot:", mainMenu());
 });
 
 bot.on("my_chat_member", async (ctx) => {
@@ -171,28 +172,29 @@ bot.on("message", async (ctx) => {
       await ctx.reply("✅ Content received. Sending to all your channels...");
       await broadcastContent(ctx.from.id, state.content);
       state.content = [];
-      await ctx.reply("✅ Done! Post sent to all your channels.");
+      await ctx.reply("✅ Done! Post sent to all your channels.", mainMenu());
     }
   }
 });
 
 // ---------- Launch ----------
-bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
+function launchBot() {
+  bot.launch({ polling: true }).then(() => console.log("🚀 Bot launched with polling"));
+}
+launchBot();
 
-// ---------- Self Ping Auto-Restart ----------
+// ---------- Self Ping & Auto Restart every 1 min ----------
 setInterval(() => {
-  let url = process.env.REPLIT_APP_URL;
-  if (!url) {
-    const slug = process.env.REPL_SLUG;
-    const owner = process.env.REPL_OWNER;
-    if (slug && owner) url = `https://${slug}.${owner}.replit.dev`;
-  }
-  if (!url) return;
-
-  https.get(url, (res) => console.log("🔄 Self-ping:", url, res.statusCode))
-       .on("error", (err) => console.error("❌ Self-ping error:", err.message));
+  https.get(SELF_PING_URL, (res) => {
+    console.log("🔄 Self-ping:", SELF_PING_URL, res.statusCode);
+  }).on("error", (err) => {
+    console.error("❌ Self-ping error:", err.message);
+    // Jika ping gagal, restart bot
+    console.log("♻️ Restarting bot...");
+    exec("kill 1", (e) => e && console.error(e)); // di Replit, kill 1 akan restart container
+  });
 }, 60000);
 
-// ---------- Graceful shutdown ----------
+// Graceful shutdown
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
