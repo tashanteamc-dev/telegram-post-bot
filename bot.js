@@ -1,17 +1,18 @@
-// bot.js - XFTEAM Telegram Bot Final and Perfect Version
+// bot.js - XFTEAM Telegram Bot (Polling + Keep Alive for Free Replit)
 const { Telegraf, Markup } = require("telegraf");
 const { Client } = require("pg");
 const express = require("express");
-const http = require('http');
-const https = require('https');
+const https = require("https");
 
 // ---------- Config ----------
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
-const PASSWORD = "xfbest"; // <-- Password for access
+const PASSWORD = "xfbest"; // password bot
+const OWNER_ID = "YOUR_TELEGRAM_ID"; // ganti dengan Telegram ID kamu
 
 if (!BOT_TOKEN || !DATABASE_URL) {
+  console.error("❌ BOT_TOKEN or DATABASE_URL missing!");
   process.exit(1);
 }
 
@@ -23,6 +24,7 @@ const db = new Client({
 
 db.connect()
   .then(async () => {
+    console.log("✅ Database connected");
     await db.query(`
       CREATE TABLE IF NOT EXISTS channels (
         user_id TEXT NOT NULL,
@@ -35,6 +37,7 @@ db.connect()
     `);
   })
   .catch((err) => {
+    console.error("❌ Database connection error", err);
     process.exit(1);
   });
 
@@ -104,6 +107,7 @@ async function broadcastContent(userId, content) {
         }
       }
     } catch (e) {
+      console.error("❌ Broadcast error:", e.message);
       if (e.message && e.message.toLowerCase().includes("chat not found")) {
         await db.query("DELETE FROM channels WHERE user_id=$1 AND channel_id=$2", [userId, ch.channel_id]);
       }
@@ -111,22 +115,24 @@ async function broadcastContent(userId, content) {
   }
 }
 
-// ---------- Express keep-alive & Webhook Setup ----------
+// ---------- Express keep-alive ----------
 const app = express();
-app.get("/", (_, res) => res.send("Bot is running"));
-app.use(bot.webhookCallback("/"));
+app.get("/", (_, res) => res.send("Bot is running with polling ✅"));
 
-// ---------- Start ----------
+app.listen(PORT, () => {
+  console.log(`✅ Server listening on port ${PORT}`);
+});
+
+// ---------- Bot Commands ----------
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
-  
+
   userState[ctx.from.id] = { step: "awaiting_password", content: [] };
-  
+
   await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM\n");
   await ctx.reply("Please enter the password to use this bot:");
 });
 
-// ---------- Auto-detect channel ----------
 bot.on("my_chat_member", async (ctx) => {
   try {
     const { chat, from, new_chat_member } = ctx.update.my_chat_member;
@@ -140,14 +146,14 @@ bot.on("my_chat_member", async (ctx) => {
           `✅ Channel linked: ${saved.title} ${saved.username || `(${saved.channel_id})`}`
         );
       } catch {}
-    } else if (new_chat_member.status === "left" || new_chat_member.status === "kicked") {
+    } else if (["left", "kicked"].includes(new_chat_member.status)) {
       await db.query("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
     }
   } catch (e) {
+    console.error("❌ Channel link error:", e.message);
   }
 });
 
-// ---------- View Channels ----------
 bot.hears("📋 View My Channels", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   const channels = await listUserChannels(ctx.from.id);
@@ -157,7 +163,6 @@ bot.hears("📋 View My Channels", async (ctx) => {
   return ctx.reply(text);
 });
 
-// ---------- Cancel ----------
 bot.command("cancel", async (ctx) => {
   userState[ctx.from.id] = { step: "menu", content: [] };
   return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
@@ -167,7 +172,6 @@ bot.hears("❌ Cancel Send", async (ctx) => {
   return ctx.reply("Canceled. Back to menu.", Markup.keyboard([["/start"], ["📋 View My Channels"], ["❌ Cancel Send"]]).resize());
 });
 
-// ---------- Collect & Auto Broadcast ----------
 bot.on("message", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   const msg = ctx.message;
@@ -188,7 +192,7 @@ bot.on("message", async (ctx) => {
     }
     return;
   }
-  
+
   if (state.step === "menu") {
     let item = null;
     if (msg.text) {
@@ -202,7 +206,7 @@ bot.on("message", async (ctx) => {
     } else if (msg.sticker) {
       item = { type: "sticker", file_id: msg.sticker.file_id };
     }
-    
+
     if (item) {
       state.content.push(item);
       await ctx.reply("✅ Content received. Sending to all your channels...");
@@ -213,16 +217,15 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// ---------- Launch & Webhook Setup ----------
-app.listen(PORT, async () => {
-  const WEBHOOK_URL = process.env.WEBHOOK_URL;
-  if (WEBHOOK_URL) {
-    await bot.telegram.setWebhook(WEBHOOK_URL);
-  }
-});
+// ---------- Launch Bot with Polling ----------
+bot.launch()
+  .then(() => {
+    console.log("🤖 Bot launched with polling");
+    if (OWNER_ID) bot.telegram.sendMessage(OWNER_ID, "✅ Bot is now online and running 24/7!");
+  })
+  .catch(err => console.error("❌ Launch error:", err));
 
-// ---------- Self-Ping Maksimal ----------
-setInterval(function() {
-    // Menggunakan https.get karena Replit menggunakan protokol HTTPS
-    https.get(process.env.WEBHOOK_URL);
-}, 60000); // Every 1 minute (60000 milliseconds)
+// ---------- Self Ping ----------
+setInterval(() => {
+  https.get(`https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
+}, 60000); // ping every 1 minute
