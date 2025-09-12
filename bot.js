@@ -106,7 +106,7 @@ function initialMenu() {
 bot.start(async (ctx) => {
   if (ctx.chat.type !== "private") return;
   userState[ctx.from.id] = { step: "awaiting_password", content: [] };
-  await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAM");
+  await ctx.reply("Welcome TashanWIN\nXFTEAM\nhttps://t.me/TASHANWINXFTEAMOFFLCIAL");
   await ctx.reply("Please enter the password to use this bot:", initialMenu());
 });
 
