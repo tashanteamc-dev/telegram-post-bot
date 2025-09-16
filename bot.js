@@ -10,7 +10,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = process.env.PORT || 3000;
 const PASSWORD = "xfbest"; 
-const SELF_PING_URL = "https://bf139069-4177-4a30-a4f5-0c01dc6b13c7-00-9jtql63imgha.spock.replit.dev:3000/";
+const SELF_PING_URL = "https://bf139069-4177-4a30-a4f5-0c01dc6b13c7-00-9jtql63imgha.spock.replit.dev/";
 
 if (!BOT_TOKEN || !DATABASE_URL) {
   console.error("❌ BOT_TOKEN and DATABASE_URL are required!");
