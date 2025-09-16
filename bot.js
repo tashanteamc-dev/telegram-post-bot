@@ -1,6 +1,6 @@
 // bot.js - XFTEAM Telegram Bot Full Mantap
 const { Telegraf, Markup } = require("telegraf");
-const { Client } = require("pg");
+const { Pool } = require("pg");
 const express = require("express");
 const https = require("https");
 const { exec } = require("child_process");
@@ -18,14 +18,23 @@ if (!BOT_TOKEN || !DATABASE_URL) {
 }
 
 // ---------- DB ----------
-const db = new Client({
-  connectionString: DATABASE_URL,
+const pool = new Pool({
+  host: process.env.PGHOST,
+  port: process.env.PGPORT,
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE,
   ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-db.connect()
-  .then(async () => {
-    await db.query(`
+// Database connection with automatic retry
+async function connectDB() {
+  try {
+    const client = await pool.connect();
+    await client.query(`
       CREATE TABLE IF NOT EXISTS channels (
         user_id TEXT NOT NULL,
         channel_id TEXT NOT NULL,
@@ -35,12 +44,33 @@ db.connect()
         PRIMARY KEY (user_id, channel_id)
       );
     `);
+    client.release();
     console.log("✅ Database connected");
-  })
-  .catch((err) => {
-    console.error("DB error:", err.message);
-    process.exit(1);
-  });
+    return true;
+  } catch (err) {
+    console.error("DB connection error:", err.message);
+    return false;
+  }
+}
+
+// Initialize DB connection with retry
+connectDB();
+
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Database pool error:', err);
+});
+
+// Database query wrapper with error handling
+async function dbQuery(text, params) {
+  try {
+    const result = await pool.query(text, params);
+    return result;
+  } catch (err) {
+    console.error('Database query error:', err);
+    throw err;
+  }
+}
 
 // ---------- Bot ----------
 const bot = new Telegraf(BOT_TOKEN);
@@ -53,7 +83,7 @@ async function upsertChannel(userId, channelId) {
   const chat = await bot.telegram.getChat(channelId);
   const title = chat.title || channelId;
   const username = chat.username ? `@${chat.username}` : null;
-  await db.query(
+  await dbQuery(
     `INSERT INTO channels (user_id, channel_id, title, username)
      VALUES ($1,$2,$3,$4)
      ON CONFLICT (user_id, channel_id)
@@ -64,7 +94,7 @@ async function upsertChannel(userId, channelId) {
 }
 
 async function listUserChannels(userId) {
-  const res = await db.query(
+  const res = await dbQuery(
     `SELECT channel_id, title, username FROM channels WHERE user_id=$1 ORDER BY title`,
     [String(userId)]
   );
@@ -87,7 +117,7 @@ async function broadcastContent(userId, content) {
     } catch (e) {
       console.error(`❌ Failed to send to ${ch.channel_id}:`, e.message || e);
       if (e.message && e.message.toLowerCase().includes("chat not found")) {
-        await db.query("DELETE FROM channels WHERE user_id=$1 AND channel_id=$2", [userId, ch.channel_id]);
+        await dbQuery("DELETE FROM channels WHERE user_id=$1 AND channel_id=$2", [userId, ch.channel_id]);
       }
     }
   }
@@ -121,7 +151,7 @@ bot.on("my_chat_member", async (ctx) => {
         await bot.telegram.sendMessage(from.id, `✅ Channel linked: ${saved.title} ${saved.username || `(${saved.channel_id})`}`);
       } catch {}
     } else if (["left", "kicked"].includes(new_chat_member.status)) {
-      await db.query("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
+      await dbQuery("DELETE FROM channels WHERE channel_id=$1", [chat.id]);
     }
   } catch {}
 });
